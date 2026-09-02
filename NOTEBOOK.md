@@ -173,3 +173,129 @@ eval corpus.
 
 **Next step:** write up A1's required documentation (corpus size,
 domain, preprocessing, "what this corpus can't tell you" paragraph).
+
+---
+
+## [A2] Confirmed: this sandbox cannot run real tokenizers
+
+**What I did:** `pip install tiktoken --break-system-packages`, then
+`tiktoken.get_encoding("gpt2")`.
+
+**Result:**
+```
+requests.exceptions.HTTPError: 403 Client Error: Forbidden for url:
+https://openaipublic.blob.core.windows.net/gpt-2/encodings/main/vocab.bpe
+```
+Same root cause as the FLORES-200 download problem: this analysis
+sandbox only allows outbound requests to a fixed allowlist of domains
+(github.com, pypi.org, npmjs.com, etc). `pip install tiktoken` succeeds
+(pypi.org is allowed) but tiktoken fetches its actual vocab file at
+*runtime* from a different host not on the allowlist, so encoding calls
+fail. Same problem will apply to any HuggingFace tokenizer
+(`AutoTokenizer.from_pretrained`), since huggingface.co isn't allowed
+either.
+
+**Interpretation / next step:** all experiment scripts for A2/A3 will be
+written here (pure Python logic, no network needed to write code), but
+must be *run* locally, where normal internet access lets pip-installed
+tokenizer libraries fetch their vocab/model files. Workflow going
+forward: write scripts here -> run locally -> paste/upload output back
+-> interpret and write up together.
+
+---
+
+## [A2] Finding 1: unused random.seed -- looks suspicious, actually fine
+
+**Hypothesis:** random.seed(1337) is set but random is never called
+elsewhere -- probably dead code, but worth verifying it doesn't
+silently affect anything before dismissing it.
+
+**What I did:** made fertility_no_random.py, identical to the original
+except import random / random.seed(1337) removed. Ran both versions'
+analyze() against the same 3 sentences with an identical fake
+deterministic encoder (fine for this test -- claim is about random's
+effect specifically, not about real fertility numbers).
+
+**Result:** byte-identical output, both fertility and tok/char, with
+random present vs removed. IDENTICAL: True.
+
+**Interpretation:** confirmed dead code, zero effect. This is the
+"looks suspicious but is fine" finding A2 asks for. Logged as Finding 1
+in partA/findings.md.
+
+**Next step:** move to the lowercasing claim (line 60) -- differential
+effect on cased vs uncased scripts. This one needs a real tokenizer to
+measure properly, so will need to be run locally.
+
+---
+
+## [A2] Finding 2: lowercasing bug, run locally with real tiktoken
+
+**Hypothesis:** lowercasing before tokenizing is a no-op for Hindi (no
+case in Devanagari) but changes English tokenization, since GPT-2's
+vocab is case-sensitive. Guessed this would make English fertility go
+DOWN (assumed lowercase = simpler/more common tokens) and thus make the
+Hindi/English ratio look artificially LARGER than true.
+
+**What I did:** wrote test_lowercasing_effect.py, ran locally (pip
+install tiktoken; local machine has normal internet access, unlike this
+sandbox). Computed fertility with vs without the lowercase step, full
+997-sentence eng/hin corpus, real gpt2 tokenizer.
+
+**Result (real numbers, not simulated):**
+```
+English WITH lowercasing: 1.2825   WITHOUT: 1.2367   (+3.71%)
+Hindi   WITH lowercasing: 7.8088   WITHOUT: 7.8081   (+0.01%, ~noise)
+Ratio   WITH lowercasing: 6.089x   WITHOUT: 6.314x    (-3.57%)
+```
+
+**This CONTRADICTS my initial hypothesis on direction.** English
+fertility went UP (worse) when lowercased, not down. So lowercasing
+actually makes the reported Hindi/English gap SMALLER than the true gap,
+not larger as I first guessed. Good reminder of why the evidence rule
+exists -- my intuition about direction was wrong, and only running the
+real numbers caught it.
+
+**Interpretation:** real, measurable, differential bug (English +3.71%,
+Hindi ~0%), but small relative to the ~6x headline gap -- a real
+contributor, not the dominant explanation for the report's number.
+Logged as Finding 2 in partA/findings.md.
+
+**Next step:** the whitespace-word denominator itself -- likely the
+conceptual bug A2 is looking for. Also want to check the empty-string
+-from-double-space issue and per-line-vs-pooled averaging.
+
+---
+
+## [A2] Finding 3: whitespace-word denominator is not cross-lingually fair
+
+**Hypothesis:** "words" via split(" ") might not mean the same amount
+of content in agglutinative languages (Tamil, Malayalam) vs English/
+Hindi. If true, this would be the conceptual bug A2 asks for.
+
+**What I did:** wrote test_word_denominator.py, ran directly in sandbox
+(no tokenizer needed -- corpus-only check). Used the fact that all 4 A1
+corpora are sentence-aligned to compare whitespace-word counts for
+IDENTICAL content across languages.
+
+**Result:**
+```
+eng: 21.02 avg words/sentence (baseline)
+hin: 24.71 (1.176x eng)
+tam: 16.28 (0.775x eng)
+mal: 14.55 (0.692x eng)
+correlations with eng: hin r=0.895, tam r=0.858, mal r=0.842
+```
+
+**Interpretation:** confirmed -- for the same content, Malayalam and
+Tamil pack meaning into visibly fewer whitespace-"words" than English,
+while Hindi uses visibly more. This directly biases tokens/word: Tamil/
+Malayalam fertility is understated, Hindi's is overstated, purely from
+denominator choice, independent of any tokenizer behavior. This is the
+conceptual bug -- logged as Finding 3 in partA/findings.md. Confidence
+high: this doesn't depend on tokenizer correctness at all, just on
+corpus alignment, which we already verified in A1.
+
+**Next step:** check the double-space -> empty-word issue, and the
+per-line-average vs pooled-average question. Then move to A3 (corrected
+analysis with proper denominators).

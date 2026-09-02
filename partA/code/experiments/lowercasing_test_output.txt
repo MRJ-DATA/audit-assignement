@@ -1,0 +1,11 @@
+English fertility WITH  lowercasing: 1.2825
+English fertility WITHOUT lowercasing: 1.2367
+  -> lowercasing changes English fertility by +3.71%
+
+Hindi fertility WITH  lowercasing: 7.8088
+Hindi fertility WITHOUT lowercasing: 7.8081
+  -> lowercasing changes Hindi fertility by +0.01%
+
+Hindi/English fertility ratio WITH  lowercasing (as report does it): 6.089x
+Hindi/English fertility ratio WITHOUT lowercasing: 6.314x
+  -> lowercasing changes the REPORTED RATIO by -3.57%

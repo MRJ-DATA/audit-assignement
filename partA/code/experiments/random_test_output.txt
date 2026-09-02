@@ -1,0 +1,4 @@
+original (with unused random.seed):  (8.26984126984127, 1.5333333333333332)
+no_random (random import/seed removed): (8.26984126984127, 1.5333333333333332)
+
+IDENTICAL: True
