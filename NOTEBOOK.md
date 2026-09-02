@@ -441,3 +441,28 @@ Wrote up full results tables and interpretation in partA/analysis.md.
 
 **Next step:** A4 -- the 1-page recommendation memo, building directly
 on this analysis.
+
+---
+
+## [A4] Wrote recommendation memo
+
+**What it contains (per A4's required structure):** corrected headline
+numbers (gpt2 vs MuRIL sentence-level ratios, side by side), routing
+recommendation (use Indic-aware tokenizer; drop the "budget 6x" framing
+-- disparity is a tokenizer artifact, not an inherent language cost),
+biggest caveat (FLORES is formal/general-domain text, production likely
+more conversational/code-mixed), and a production monitoring metric
+(actual tokens/request by language, compared continuously against the
+~1.05-1.2x predicted range -- drift above that range signals either a
+traffic-composition mismatch or a tokenizer deployment problem, giving
+a concrete trigger to re-audit rather than let the assumption go stale).
+
+**Framing decision:** kept the memo's recommendation directionally
+consistent with the original report (use a specialized Indic tokenizer)
+but corrected the JUSTIFICATION and MAGNITUDE -- the original intern
+was right about the fix, wrong about why it's needed and how big the
+problem is. Chose to state this explicitly rather than just replacing
+the numbers, since it's a more honest and more useful correction for
+leadership than silently swapping in new figures.
+
+Part A (A1-A4) is now complete. Next: Part B (capacity reconciliation).
