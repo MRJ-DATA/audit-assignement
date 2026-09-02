@@ -45,13 +45,33 @@ a correctness bug.
 English/Hindi ratio
 
 **Claim:** `analyze()` calls `line.lower()` (line 60) before tokenizing,
-for every language, uniformly. Devanagari has no case distinction, so
-this is a no-op for Hindi. English does have case, so lowercasing
-changes what's actually fed to the tokenizer -- and GPT-2's vocabulary,
-trained on real mixed-case text, likely encodes capitalized proper nouns
-and sentence-initial words more efficiently than their lowercased forms.
-If so, lowercasing artificially inflates English's fertility, which
-would bias the reported Hindi/English ratio.
+justified in a comment as `# lowercase so casing doesn't add noise to
+the comparison`. Two separate problems, not one:
+
+1. **It fails its own stated goal.** The comment's premise is that
+   lowercasing removes noise neutrally. Our evidence (below) shows it
+   does not act neutrally -- it measurably changes English fertility
+   while leaving Hindi essentially untouched, i.e. it *introduces*
+   asymmetric noise rather than removing it. A step whose entire
+   justification is "makes the comparison fairer," but which is
+   measurably unfair in one specific direction, doesn't do what its own
+   comment claims.
+2. **Even where neutral, it wouldn't match the thing being estimated.**
+   The report's goal is to estimate real production serving cost.
+   Production traffic is not lowercased before being sent to a
+   tokenizer -- real requests keep natural capitalization. So this step
+   doesn't just risk asymmetry; even in the hypothetical case where it
+   *were* perfectly symmetric across languages, it would still be
+   measuring a different (artificial) input distribution than what the
+   system will actually see in production.
+
+This is not a "computes exactly what it says but the wrong thing"
+conceptual bug in the A2 sense (that's Finding 3) -- it's closer to a
+correctness bug against the code's own documented intent, confirmed by
+direct measurement rather than by an unverified suspicion. Note also
+that Devanagari has no case distinction, so lowercasing is a no-op for
+Hindi by construction (there is nothing to lowercase); the interesting
+question is only what it does to English, and to the ratio.
 
 **Experiment:** `experiments/test_lowercasing_effect.py`, run locally
 with real tiktoken (gpt2 encoding) against the full A1 corpus (997
@@ -72,22 +92,23 @@ Hindi/English ratio WITHOUT lowercasing:                   6.314x
   -> lowercasing changes the reported ratio by -3.57%
 ```
 
-**Direction and magnitude:** lowercasing is a real, measurable,
-*differential* bug -- it inflates English's fertility by ~3.7% while
-leaving Hindi essentially untouched, which makes the reported
-Hindi/English disparity ~3.6% *smaller* than the true (no-lowercasing)
-comparison. Likely mechanism (plausible, not directly verified at the
-token level): GPT-2's vocabulary, trained on naturally-cased English
-text, has more efficient tokens for capitalized proper nouns and
-sentence-initial words than for their lowercased forms, so stripping
-case pushes English text into less efficient tokenization.
+**Direction and magnitude:** lowercasing inflates English's fertility by
+~3.7% while leaving Hindi essentially untouched (~0%), which makes the
+reported Hindi/English disparity ~3.6% *smaller* than the true
+(no-lowercasing) comparison. Likely mechanism (plausible, not directly
+verified at the token level): GPT-2's vocabulary, trained on naturally-
+cased English text, has more efficient tokens for capitalized proper
+nouns and sentence-initial words than for their lowercased forms, so
+stripping case pushes English text into less efficient tokenization.
 
-**Conclusion:** this is a genuine code bug worth fixing (don't lowercase
-before tokenizing at all, or apply casing-neutral handling only where it
-doesn't distort one language's tokenization more than another's), though
-its effect size here (~3.6% on the ratio) is much smaller than the
-5.89x-vs-corrected gap we'll need to explain overall -- so it is a real
-contributor but very unlikely to be the dominant source of the report's
+**Conclusion:** real, measured, directional bug -- fails its own
+documented purpose (asymmetric, not noise-neutral) and doesn't match
+production input distribution even where it is close to neutral. Fix:
+don't lowercase before tokenizing at all; if casing sensitivity is a
+genuine concern, it needs to be handled in a way that's verified
+symmetric across languages, not just assumed to be. Effect size here
+(~3.6% on the ratio) is real but small relative to the ~6x headline gap
+-- a genuine contributor, not the dominant source of the report's
 overstated number.
 
 ---

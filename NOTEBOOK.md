@@ -299,3 +299,145 @@ corpus alignment, which we already verified in A1.
 **Next step:** check the double-space -> empty-word issue, and the
 per-line-average vs pooled-average question. Then move to A3 (corrected
 analysis with proper denominators).
+
+---
+
+## [A2] Revisited Finding 2's framing after user pushback
+
+**Question raised:** "is line.lower() really a bug?" -- fair challenge,
+since the code does exactly what it's told to do (no crash, no logic
+error in the narrow sense).
+
+**Resolution:** reframed Finding 2 around two more precise claims
+instead of a vague "this is a bug": (1) the code's own comment claims
+lowercasing removes noise from the comparison -- our measurement shows
+it does NOT do this neutrally, it's asymmetric (English +3.71%, Hindi
+~0%), so it fails its own stated purpose; (2) even in a hypothetical
+world where it were neutral, it still wouldn't match production
+reality, since real traffic isn't lowercased before tokenization. Both
+claims are testable/defensible independent of whether one considers
+"changes the numbers" alone sufficient to call something a bug. Updated
+partA/findings.md Finding 2 with this framing.
+
+**Interpretation:** this is a good example of the assignment's defense
+requirement in miniature -- "this is a bug because it changes the
+numbers" is a weaker claim than "this is a bug because it fails its own
+documented purpose, as shown by direct measurement, and doesn't match
+the production distribution it's meant to approximate."
+
+---
+
+## [A2] Finding 4: double-space -> empty-word bug, checked in real corpus
+
+**Hypothesis:** `split(" ")` (literal single space) creates empty-string
+"words" on any double-space, inflating the denominator. Earlier noticed
+double-space typos in the ORIGINAL toy corpus_sample -- checking if this
+also occurs in the real A1 (FLORES-200) corpus, and if so, how unevenly
+across languages.
+
+**What I did:** grepped for double-spaces per language in the A1
+corpus; compared `len(line.split(" "))` (buggy) vs `len(line.split())`
+(correct) average word count per language, no tokenizer needed since
+this only touches the denominator.
+
+**Result:**
+```
+double-spaces found:  eng=1  hin=7  tam=83  mal=75  (out of 997 lines)
+denominator inflation: eng +0.00%  hin +0.11%  tam +0.63%  mal +0.93%
+```
+
+**Interpretation:** small in absolute size but real, and unevenly
+distributed -- hits Tamil/Malayalam ~6-9x harder than Hindi, almost not
+at all for English. Direction: inflated denominator -> deflated
+fertility, meaning this compounds with Finding 3's bias, further
+understating Tamil/Malayalam fertility. Logged as Finding 4 in
+partA/findings.md.
+
+**Decision:** stopping A2 findings here -- have covered all 3 required
+categories (fine-but-suspicious, code bug, conceptual bug) plus one
+additional small code bug, all with measured evidence. Did not pursue
+the per-line-vs-pooled-averaging question further; judged lower priority
+given time, and the 4 findings already collected are sufficient and
+well-evidenced for A2's 20 points. Moving to A3 (corrected analysis).
+
+---
+
+## [A2] Decision: dropped Finding 4 from the submission
+
+**Decision:** user chose not to include Finding 4 (double-space ->
+empty-word bug) in the repo. Removed it from partA/findings.md and
+deleted experiments/test_word_split_bug.py. Not pushed to GitHub at any
+point, so no git history cleanup needed.
+
+**A2 final scope:** 3 findings --
+  1. random.seed dead code (looks suspicious, actually fine)
+  2. lowercasing bug (code bug, measured)
+  3. whitespace-word denominator (conceptual bug, measured)
+All three required A2 categories are still covered without Finding 4.
+
+---
+
+## [A3] Wrote corrected_analysis.py
+
+**Design:** 2 tokenizers (gpt2 -- matches original report; muril --
+google/muril-base-cased, Indic-aware, picked over IndicBERTv2/XLM-R
+because it's specifically built for Indian languages, easy to justify
+in defense) x 3 denominators (tokens/sentence, tokens/UTF-8-byte,
+tokens/grapheme-cluster). None of the 3 denominators is "whitespace
+word" -- deliberately avoiding Finding 3's flaw. Grapheme cluster count
+uses the `regex` package's \X pattern (extended grapheme clusters) --
+NOT Python's len(), which counts Unicode codepoints and would
+undercount for Devanagari/Tamil/Malayalam where one visual character
+can be multiple codepoints (base + combining marks).
+
+Applies A2's fixes: no lowercasing, no whitespace-word as primary
+metric.
+
+**Status:** cannot run in this sandbox (same tokenizer network
+restriction as before -- needs tiktoken + transformers to download real
+vocab/model files). Needs to be run locally:
+  pip install tiktoken transformers regex
+  python corrected_analysis.py
+
+**Next step:** run locally, get real numbers back, interpret results
+and write A3's analysis + A4's memo.
+
+---
+
+## [A3] Real results received, analyzed, written up
+
+**What happened:** ran corrected_analysis.py locally (gpt2 + muril,
+997-sentence corpus, 3 denominators). Real output pasted back --
+see partA/results/corrected_analysis_output.txt.
+
+**Headline result:** tokenizer choice is a MUCH bigger factor than any
+of the A2 code bugs. Under gpt2, corrected sentence-level ratios are
+hin=7.44x, tam=15.43x, mal=15.14x -- WORSE than the original report's
+5.89x claim (and Tamil/Malayalam are catastrophic, never tested by the
+intern). Tamil's tok/byte under gpt2 is 0.9959 -- ~1 token/byte,
+indicating near-total fallback to byte-level fragmentation, consistent
+with gpt2's training data containing ~no Tamil.
+
+Under MuRIL (Indic-aware), sentence-level ratios collapse to
+hin=1.17x, tam=1.05x, mal=1.17x -- a 5-17% overhead, not 6-15x.
+
+**Unexpected additional finding:** tok/byte is ALSO a distorted
+denominator, in the opposite direction from tok/word. Under MuRIL, all
+3 Indic languages show byte ratios BELOW 1.0 (0.33-0.45x) -- not
+because MuRIL is more efficient for them, but because Devanagari/Tamil/
+Malayalam use 3-byte UTF-8 encoding vs 1-byte ASCII for English. This
+wasn't hypothesized in advance -- found it while writing up the results
+table and noticing the sub-1.0 ratios looked suspicious, then reasoning
+through the UTF-8 byte-width explanation.
+
+**Conclusion (for A3's required question):** tokens/sentence (holds
+content/meaning constant via the aligned corpus), reported together
+with which tokenizer it was measured with, is the most defensible
+single number for the routing/cost decision. tok/word (Finding 3) and
+tok/byte (this finding) are both denominator-distorted, in opposite
+directions, and neither should be the headline metric.
+
+Wrote up full results tables and interpretation in partA/analysis.md.
+
+**Next step:** A4 -- the 1-page recommendation memo, building directly
+on this analysis.

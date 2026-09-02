@@ -1,0 +1,49 @@
+[transformers] PyTorch was not found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+[gpt2] eng: 25741 total tokens over 997 sentences
+[gpt2] hin: 191602 total tokens over 997 sentences
+[gpt2] tam: 397169 total tokens over 997 sentences
+[gpt2] mal: 389615 total tokens over 997 sentences
+[muril] eng: 26365 total tokens over 997 sentences
+[muril] hin: 30731 total tokens over 997 sentences
+[muril] tam: 27792 total tokens over 997 sentences
+[muril] mal: 30883 total tokens over 997 sentences
+
+==========================================================================================
+FULL RESULTS TABLE: tokens per denominator unit, by tokenizer x language
+==========================================================================================
+
+--- tokenizer: gpt2 ---
+lang      tok/sentence      tok/byte    tok/grapheme
+----------------------------------------------------
+eng             25.818        0.2055          0.2056
+hin            192.179        0.5945          2.3247
+tam            398.364        0.9959          4.2043
+mal            390.787        0.9955          5.1520
+
+--- tokenizer: muril ---
+lang      tok/sentence      tok/byte    tok/grapheme
+----------------------------------------------------
+eng             26.444        0.2104          0.2106
+hin             30.823        0.0954          0.3729
+tam             27.876        0.0697          0.2942
+mal             30.976        0.0789          0.4084
+
+==========================================================================================
+RATIOS vs ENGLISH (>1 means MORE tokens needed than English for same content)
+==========================================================================================
+
+--- tokenizer: gpt2 ---
+lang      sentence ratio    byte ratio    grapheme ratio
+--------------------------------------------------------
+eng                1.000         1.000             1.000
+hin                7.443         2.894            11.306
+tam               15.429         4.847            20.448
+mal               15.136         4.846            25.057
+
+--- tokenizer: muril ---
+lang      sentence ratio    byte ratio    grapheme ratio
+--------------------------------------------------------
+eng                1.000         1.000             1.000
+hin                1.166         0.453             1.770
+tam                1.054         0.331             1.397
+mal                1.171         0.375             1.939
