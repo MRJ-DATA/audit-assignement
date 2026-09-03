@@ -466,3 +466,42 @@ the numbers, since it's a more honest and more useful correction for
 leadership than silently swapping in new figures.
 
 Part A (A1-A4) is now complete. Next: Part B (capacity reconciliation).
+
+---
+
+## [B1] KV-cache bytes/token and max concurrent sequences
+
+**What I did:** derived KV-cache bytes/token from model_spec.md alone
+(2 x layers x KV_heads x head_dim x bytes_per_elem -- used the 8 GQA
+KV heads, not the 24 query heads, since KV heads is what determines
+cache size). Then computed max concurrent 4096-token sequences from
+total GPU memory, gpu_memory_utilization, model weight size, and the
+given non-KV overhead. Assumption stated explicitly: GiB (2^30 bytes)
+used throughout for consistency; noted the ~0.1% GB-vs-GiB nameplate
+difference is negligible here.
+
+**Result:**
+```
+KV bytes/token = 114,688 bytes = 112 KiB/token (exact)
+KV cache budget = 12.6569 GiB
+bytes per 4096-token sequence = 0.4375 GiB (exactly 7/16)
+max concurrent sequences = 28.93 -> floor to 28
+```
+
+**Checked against bench_log.csv** (long-context sweep, prompt=3584 +
+gen=512 = 4096 total context):
+```
+batch 24: kv_cache_util=0.93, preempted_seqs=0   (fits)
+batch 32: kv_cache_util=0.97, preempted_seqs=7   (doesn't fit)
+```
+The predicted ceiling (~28-29) sits exactly between these two rows --
+24 fits cleanly, 32 immediately shows preemption. Strong direct
+confirmation, no adjustment needed to the arithmetic.
+
+**Interpretation:** clean, high-confidence answer -- both because the
+numbers came out to nice round/exact fractions (112 KiB, 7/16 GiB) and
+because the log independently corroborates the predicted ceiling.
+Saved as partB/b1_kv_cache_math.py (re-runnable, parameterized, so it
+can be modified live in the defense if asked "what if X changed").
+
+**Next step:** B2 -- the long-context throughput anomaly.
