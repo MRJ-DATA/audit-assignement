@@ -505,3 +505,126 @@ Saved as partB/b1_kv_cache_math.py (re-runnable, parameterized, so it
 can be modified live in the defense if asked "what if X changed").
 
 **Next step:** B2 -- the long-context throughput anomaly.
+
+---
+
+## [B2] Throughput anomaly identified and explained
+
+**What I did:** looked at the full prompt=3584 sweep across all batch
+sizes (4 through 48), not just the two rows REPORT_v0 cited. Compared
+reported_tok_s progression against preempted_seqs and kv_cache_util
+columns from the same rows.
+
+**Result:** throughput climbs smoothly batch 4->24 (565->1607 tok/s),
+peaks at batch 24, then DROPS at batch 32 (1384) and batch 48 (1298.5)
+-- despite batch size increasing. This directly contradicts the "more
+batch = more throughput" assumption the report relies on.
+
+**Mechanism:** ties directly back to B1's ~28-29 sequence ceiling.
+Batch 24 = 93% KV util, 0 preemptions (fits). Batch 32/48 exceed the
+ceiling -> scheduler preempts sequences (evicts + later recomputes
+prefill) -> wasted GPU cycles -> throughput drops even as more
+requests are thrown at the system. itl_ms_p50 jumping at batch 32
+(101.79ms vs 96.07ms at batch24) is consistent with this.
+
+**Proposed fix:** cap admission at ~24-28 concurrent sequences via
+admission control, so excess requests queue instead of getting admitted
+and preempted. Predicted effect (using batch 24's throughput as the
+achievable ceiling): +16.1% vs current batch=32, +23.8% vs current
+batch=48.
+
+**Interpretation:** B1 and B2 reinforce each other nicely -- the same
+KV-cache ceiling derived from pure spec arithmetic in B1 independently
+explains the throughput anomaly observed in the log for B2. High
+confidence in both.
+
+**Next step:** B3 -- the report's misreading of one column, and the
+honest goodput of the batch-24 long-prompt row.
+
+---
+
+## [B3] Identified the one-column misreading, computed honest goodput
+
+**Hypothesis:** reported_tok_s might be counting prompt (prefill)
+tokens together with generated (decode) tokens, not generation
+throughput alone -- would explain both of REPORT_v0's Section 2 claims
+in one shot.
+
+**What I did:** tested `reported_tok_s == num_requests*(prompt_len+
+gen_len)/wall_clock_s` against ALL 13 rows in bench_log.csv, not just
+the 2 rows the report cites.
+
+**Result:** exact match (within rounding) on every single row.
+Confirmed: reported_tok_s = (prefill + decode) tokens / time, not
+decode-only throughput. Prefill is cheap/parallel, decode is slow/
+sequential -- blending them means long-prompt rows look artificially
+fast just from counting cheap prefill tokens.
+
+**Honest goodput of batch-24 long-prompt row, two independent methods:**
+```
+Method 1 (gen tokens / wall clock):  24*512/61.16 = 200.92 tok/s
+Method 2 (via itl_ms_p50):           24*(1000/96.07) = 249.82 tok/s
+```
+Both land in the same ballpark despite using completely different
+columns (one uses wall_clock_s + gen_len, the other uses itl_ms_p50 +
+concurrency only) -- strong mutual confirmation. Reported figure
+(1607.4) overstates true goodput by 6.4-8x.
+
+**Interpretation:** this single misread explains BOTH of the report's
+Section 2 conclusions at once -- "longer prompts = better throughput"
+and the ~3200 tok/s batch-48 extrapolation are both downstream of
+treating a prefill-contaminated counter as if it were generation
+throughput. Combined with B2, the report's capacity story is wrong in
+two independent, compounding ways: wrong metric (B3) AND wrong scaling
+assumption (B2). Saved verification + goodput calc as
+partB/b3_goodput_math.py.
+
+**Next step:** B4 -- one paragraph on which serving-stack metric would
+confirm the B2 mechanism.
+
+---
+
+## [B4] Metric to confirm B2's preemption mechanism
+
+Answered directly in partB/answers.md -- proposed a preemption/recompute
+time counter (or equivalent scheduler-overhead timer most vLLM-style
+frameworks expose) that should show near-zero overhead at batch<=24 and
+a step-change increase at batch 32/48 tracking the existing
+preempted_seqs column, with an expected magnitude (15-25% of GPU time)
+consistent with the throughput recovery predicted in B2.
+
+Part B (B1-B4) is now complete. Next: Part C (decision memo).
+
+---
+
+## [C] Wrote decision memo
+
+**Reasoning process:** worked through why each of the 3 paths (SFT,
+small rewriter model, prompt-engineering) fits or doesn't fit the given
+constraints, before picking one -- the constraint that mattered most was
+the reviewer only covering 2 of the 6 target languages (Hindi, Kannada),
+combined with a tight 3-week deadline. This made SFT risky (4 languages
+of training data would ship with zero human quality check) and made the
+small rewriter model too slow to build and validate in the time
+available.
+
+**Decision:** recommended (c) prompt-engineering as primary path --
+lowest risk (no training, instantly reversible), fastest to test
+(day-1 experiment possible), best fit for the reviewer bottleneck (can
+get a directional read on Hindi/Kannada within days). Included an
+explicit, dated kill criterion (day 10 of 15: if best prompt variant
+hasn't hit 50% "casual enough" on Hindi/Kannada after 2 iteration
+rounds, kill (c) and escalate to (b) with the remaining time + freed-up
+A100).
+
+Memo follows A4's structure requirements: labelled assumptions,
+back-of-envelope arithmetic (reviewer throughput ~240 examples/week
+total, compute, timeline), numeric success metric (>=70% rated 4+/5
+casualness on Hindi/Kannada), kill criterion (by when + what
+observation), and a concrete Day 1 first experiment.
+
+**Revision:** rewrote the memo's sentences to be shorter/simpler after
+user feedback -- same vocabulary and content, easier to read. Confirmed
+with user this didn't change the substance, just readability.
+
+Part C is now complete. Next: finalize AI_USAGE.md, then defense prep.
